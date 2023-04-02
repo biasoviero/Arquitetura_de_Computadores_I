@@ -1,0 +1,116 @@
+;Beatriz Forneck Soviero
+;Cartão 00342227
+
+
+ORG 0
+
+;INICIALIZAÇÃO DAS VARIÁVEIS
+
+;Zera as variáveis auxiliares
+
+	LDR A #0
+	STR A C8 	;Zera contador até 8
+	STR A CTAM 	;Zera contador do tamanho
+
+;Zera o vetor de saída
+
+	LDR X IS 	;Carrega o endereço do vsaída[0]
+	LDR B #8 	;Carrega o contador b com 8 
+ZEROU:	
+	JZ COPIA 	;Se for 0, vsaída foi inicializado
+	STR A 0, X 	;Zera a vsaída[b]
+	ADD X #1 	;Passa para o próximo byte do vetor
+	SUB B #1 	;b--
+	JMP ZEROU 	;b == 0?
+
+;CÓPIA DO VENTRADA
+;Utilizada pois cada elemento do ventrada (exceto o 1°) sofre deslocamento para a esquerda
+
+COPIA:
+	LDR X #0
+	LDR A TAM 	;Carrega RA com o tamanho do vetor
+FIMVET:	
+	JZ MUDA 	;Se RA == 0, a operação foi realizada TAM vezes e o ventrada foi copiado
+	ADD X IE	;AUX <- ventrada[ctam]
+	STR X AUX
+	SUB X IE
+	LDR B AUX, I	;ventrada[ctam] <- valor contido no end início de ventrada + ctam
+	STR B COPIAV,X
+	ADD X #1	;ctam ++
+	SUB A #1	;tam --
+	JMP FIMVET
+	
+;Variáveis auxiliares:
+
+C8:	DB		;Contador até 8
+CTAM:	DB		;Contador até o tamanho do ventrada
+AUX:	DB		;Variável auxiliar para utilizar o modo de endereçamento indireto
+COPIAV:	DAB 	[8]	;Cópia do vetor entrada
+
+;MOVIMENTAÇÃO DOS ELEMENTOS DOS VETORES
+
+MUDA: 			
+
+ac8:	LDR A C8	;Carrega contador até 8(C8) e avalia se c8 - 8 == 0
+	SUB A #8
+	JZ FIM
+actam:	LDR A CTAM	;Carrega contador do tamanho (CTAM) e avalia se ctam - tam == 0
+	SUB A TAM
+	JZ prep 	;Se sim, incrementa c8 e zera ctam. Se não, obtém os bits do ventrada para colocá-los no vsaída
+
+;Obtenção dos bits do vetor entrada
+
+	LDR X CTAM	;RX recebe o ctam
+	LDR A COPIAV,X	;Carrega ventrada[ctam]
+	AND A #1	;Obtém ventrada[ctam][0]
+
+;Deslocamento de cada elemento do ventrada para que sejam posicionados no bit0 de cada byte do vsaída
+
+	LDR B COPIAV,X 	;Cada item da cópia do ventrada é deslocado um bit á direita e o vetor é atualizado
+	SHR B
+	STR B COPIAV,X
+
+;ARMAZENAMENTO NO VSAÍDA DOS BITS OBTIDOS DO VENTRADA
+
+;Caso o byte do ventrada analisado não for o primeiro, há um deslocamento para esquerda a fim de armazenar o bit em vsaída[c8][ctam]
+
+	LDR X CTAM
+ax:	JZ vsaida	;ctam == 0?
+	STR A AUX	;Se não, AUX <- bit obtido de ventrada[ctam]
+	ADD A AUX	;2 x AUX = SHL AUX
+	JC carry	;No caso de carry, RA += 1
+	JMP dec
+carry:	ADD A #1
+dec:	SUB X #1	;RX (contador dos bits a serem deslocados) --
+	JMP ax
+	
+vsaida:	LDR X C8	;RX recebe c8 + vsaida[0]
+	ADD X IS
+	STR X AUX
+	ADD A AUX,I	;Operação realizada para ler o valor contido no endereço em que se encontra vsaida[c8]
+	STR A AUX,I	;vsaida[c8] +=  bit de ventrada[ctam]
+	
+;ATUALIZAÇÃO DOS CONTADORES
+
+	LDR X CTAM
+	ADD X #1
+	STR X CTAM	;ctam += 1
+	JMP actam	;ctam == tam?
+prep:	
+	LDR A C8
+	ADD A #1
+	STR A C8	;c8 += 1
+	LDR A #0
+	STR A CTAM	;ctam= 0
+	JMP ac8		;avalia c8 == 8
+		
+	
+FIM:	HLT
+
+
+;Variáveis
+
+ORG 192
+IE: 	DB 		;Endereço com o início do vetor de entrada
+TAM: 	DB 		;Tamanho do vetor de entrada
+IS: 	DB 		;Endereço com o início do vetor de saída

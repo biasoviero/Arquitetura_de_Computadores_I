@@ -1,0 +1,485 @@
+;
+;  Beatriz Forneck Soviero
+;
+;  Cartão 00342227
+;
+;******************************************************************************
+;
+;	Arquivo de Referência para o desenvolvimento do kernel.
+;
+;	Versão: 2022.2
+;
+;	Áreas de memória
+;
+;	0000 - 7FFF		_KERNEL
+;					Área de Kernel para implementação dos alunos
+;
+;	0100 - 01FF		_VETTAB
+;					Tabela com os vetores das funções do kernel
+;					*** CUIDADO! Esse vetor está no meio da área de código ***
+;
+;	8000 - FF7F		_APP
+;					Área onde será colocado o programa de aplicação.
+;					Esse programa vai fazer o acesso aos periféricos e interrupções, através das funções do Kernel.
+;
+;	FF80 - FFBF 		_IOAREA16
+;					Area de perifericos, acessada na base 16 bits
+;
+;	FFC0 - FFFF		_IOAREA08
+;					Area de perifericos, acessada na base 8 bits
+;					
+;******************************************************************************
+
+
+_KERNEL:	equ	h0000
+_VETTAB:	equ	h0100
+_RESET:		equ	_VETTAB+H0100
+_APP:		equ	h8000
+_IOAREA16:	equ	hFF80
+_IOAREA08:	equ	hFFC0
+
+
+;
+;------------------------------------------------------------------------------
+;	Área reservada para os periféricos
+;------------------------------------------------------------------------------
+
+; Acesso em 16 bits
+		org		_IOAREA16
+STACK:		daw		[31]		
+IVET:	dw		0			; Vetor de interrupção
+
+; Acesso em 8 bits
+		org		_IOAREA08
+		dab		[23]
+TIMDT:	db		0			; Registro de programação do timer
+INTS:	db		0			; INTERRUPT STATUS: IP x x x . x x IPStec IPStim
+INTE:	db		0			; INTERRUPT ENABLE: IE x x x . x x IEStec IEStim
+TECST:	db		0			; Status do teclado
+TECDT:	db		0			; Dado do teclado
+VISOR:	dab		[36]			; Portas de acesso ao visor
+
+;	
+;------------------------------------------------------------------------------
+;	Ponto de entrada do RESET do processador
+;------------------------------------------------------------------------------
+		org		_KERNEL
+		jmp		_RESET
+
+;
+;------------------------------------------------------------------------------
+;	Area do kernel com os vetores das funções do kernel
+;------------------------------------------------------------------------------
+		org		_VETTAB
+		
+		dw		kbhit			; WORD	kbhit()
+		dw		getchar			; BYTE	getchar()
+		dw		putchar			; void	putchar(BYTE c)
+		dw		putmsg			; void	putmsg(BYTE *msg)
+		dw		timer			; void	timer(WORD tempo, WORD callback)
+		dw		volume			; WORD	volume()
+
+		
+;	
+;------------------------------------------------------------------------------
+;	Código de RESET (BOOT) do processador/interrupção
+;------------------------------------------------------------------------------
+		org		_RESET
+
+; 1) Desabilitar o sistema de interrupções
+
+		CLR INTE
+
+; 2) Inicializar o stack pointer (SP = R6)
+	
+		MOV #STACK, R6
+
+; 3) Inicializar as variáveis internas usadas pelo sistema de interrupções e periféricos (IVET, INTE, etc.)
+		
+		MOV #isr, IVET
+		CLR TECDT
+		CLR INTS
+
+; 4) Inicializar as variáveis internas do kernel
+
+		CLR cursor
+		CLR vol
+		CLR buffer
+		CLR temp
+		CLR callback
+		CLR TICK
+		CLR TICKCNT
+		CLR R0
+		CLR R1
+		CLR R2
+		CLR R3
+		CLR R4
+		CLR R5
+		CLR vol100
+		CLR vol10
+		CLR vol1
+		MOV #48, charvol
+
+; 5) Inicializar o teclado zerando o byte de estado (TECST, endereço 65498)
+
+		CLR TECST
+
+; 6) Inicializar o timer
+
+		CLR TIMDT		
+
+; 7) Limpar o visor
+
+		JSR R7, limpa
+		CLR R1
+		JSR R7, displayVOL
+		CLR R2		
+
+; 8) Habilitar interrupções
+
+		MOV #H83, INTE	;Habilita interrupções de teclado e timer	
+	
+; 9) Retornar para o programa de aplicação com um desvio para o endereço _APP da memória
+	
+		jmp	_APP
+
+;		
+;------------------------------------------------------------------------------
+; WORD	kbhit()
+;------------------------------------------------------------------------------
+;Verifica se uma tecla foi digitada, se sim, r0 é retornado com 0. Se não, r0 
+;recebe outro valor
+kbhit:		
+		TST	buffer		;Verifica se recebeu uma tecla
+		BEQ	semTecla	;Se o buffer estiver vazio não tem tecla	
+		CLR	R0		;else r0 = 0 (recebeu)
+fimKbhit:	rts	r7
+semTecla:
+		MOV #1, R0		;r0 = 1 (não recebeu tecla)
+		JMP fimKbhit
+
+;		
+;------------------------------------------------------------------------------
+; BYTE	getchar()
+;------------------------------------------------------------------------------
+;Obtém a tecla digitada, se nenhuma tecla foi digtada, aguarda até que seja e retorna
+;o código ASCII
+getchar:
+		TST     buffer		;Verifica se recebeu uma tecla
+		BEQ	getchar		;Se o buffer está vazio, verifica até receber uma
+		and	#H7F,INTE	;Desabilita interrupção pois o buffer é usado pelas duas
+		MOV	buffer, R0	;Transfere o dado para r0
+		CLR 	buffer		;Informa que já leu a tecla
+		or	#h80,INTE	;Habilita a interrupção
+		rts		r7
+
+;		
+;------------------------------------------------------------------------------
+; void	putchar(BYTE c)
+;------------------------------------------------------------------------------
+;Põe o caractere, se for válido, na Área Caracteres do visor
+putchar:	
+		
+		CMP R5, #H7A
+		BHI volta2		;Tem código ASCII maior que h7a? termina
+
+		CMP R5, #H19
+		BHI exibe		;Se tem código ASCII maior que h19 então é válido
+		
+		CMP R5, #H08		;É backspace?
+		BEQ backspace
+
+		CMP R5, #H0D		;É carriage return?
+		BEQ movecursor
+
+		CMP R5, #H0A		;É line feed?
+		BNE volta2
+		JSR R7, limpa
+		JMP volta2
+		
+		
+backspace:	CMP cursor, #0		;Avalia se o cursor está na primeira posição
+		BEQ volta2		;Se sim, não muda
+		DEC cursor		;Se não, move cursor para esquerda
+		MOV #H20, R5		;Preenche a tecla apagada com espaço
+		JSR R7, putchar		
+		DEC cursor		
+		JMP volta2
+
+movecursor:	CLR cursor		;Move o cursor para o início
+		JMP volta2
+
+		
+exibe:		CMP cursor, #29		;Verifica se o cursor chegou ao fim da Área de Caracteres
+		BLS display		;Se for menor que 29 exibe no visor
+		JMP volta2		;Se for maior ou igual, termina		
+					
+display:	MOV #VISOR, R2		;r2 recebe o end do visor
+		ADD cursor, R2		;E posiciona no cursor
+		INC cursor		;cursor += 1
+		MOV R5, (R2)		;Move a tecla digitada para o visor
+		CLR R5			;Informa que já colocou a tecla
+
+		
+volta2:		
+		CLR R2
+		rts		r7
+
+;		
+;------------------------------------------------------------------------------
+; void	limpa()
+;------------------------------------------------------------------------------
+limpa:		
+		MOV #VISOR, R1
+		ADD #29, R1		;Começa pela última posição da área de caracteres para limpar (somar 29 pois visor começa no 65500)
+limpa_loop:	
+		MOV #H20,(R1)		;Preenche a área limpa com h20
+		DEC R1			;Vai para a próxima posição à esquerda
+		CMP R1, #VISOR		;Se r1 < visor significa que todas as posições foram limpas
+		BLT limpou
+		JMP limpa_loop
+
+limpou:		CLR R1
+		rts r7
+;		
+;------------------------------------------------------------------------------
+; void	putmsg(BYTE *msg)
+;------------------------------------------------------------------------------
+;Põe a mensagem na área de caracteres
+putmsg:
+
+		MOV R5, R4	;Lê o endereço da primeira letra
+		DEC R4		;--1 para utilizar a máscara ao ler 2 bytes
+		
+msg_loop:	MOV (R4), R3	;Lê a primeira letra
+		AND #H00FF, R3	;Lê apenas o último byte
+		BEQ voltamsg	;Checa se é '\0', se sim, termina
+
+		MOV R3, R5	;Exibe a letra no visor
+		JSR R7, putchar    	
+		INC R4		;Passa para a próxima letra
+		JMP msg_loop
+
+voltamsg:	rts		r7
+
+;		
+;------------------------------------------------------------------------------
+; void	timer(WORD tempo, WORD callback)
+;------------------------------------------------------------------------------
+;Inicia um temporizador com o valoor de R5, cada vez que o tempo passa é interrompido
+;Quando aingir 0, interrupção chama a função
+timer:
+		MOV R4,	callback 	;Armazena endereço de callback
+		MOV R5, temp		;Armazena R5 em uma variável diferente para ser usada na interrupção
+		
+		rts		r7
+		
+;------------------------------------------------------------------------------
+; INTERRUPÇÕES
+;------------------------------------------------------------------------------
+isr:
+	MOV R0, -(R6)	;Salva todos os registradores
+	MOV R1, -(R6)
+	MOV R2, -(R6)
+	MOV R3, -(R6)
+	MOV R4, -(R6)
+	MOV R5, -(R6)
+
+	CMP INTS, #H83	;Se for interrupção dos dois vai para o teclado e depois testa se a do timer está ligada
+	BEQ isrtec
+
+	CMP INTS, #H82	;Verifica se é interrupção do teclado
+	BEQ isrtec
+	
+tsttimer:
+	CMP INTS, #H81	;Verifica se é interrupção do timer
+	BEQ isrtim
+	
+isrfim:
+	MOV (R6)+, R5	;Tira os registradores da pilha
+	MOV (R6)+, R4	
+	MOV (R6)+, R3
+	MOV (R6)+, R2
+	MOV (R6)+, R1
+	MOV (R6)+, R0
+	
+	RTI
+		
+;------------------------------------------------------------------------------
+; INTERRUPÇÃO DO TECLADO
+;------------------------------------------------------------------------------
+
+isrtec:
+	CMP TECST, #H80		;Verifica se recebeu uma tecla
+	BNE isrtecFIM		;Se não tem tecla termina
+	MOV TECDT, buffer	;Salva a tecla digitada
+	CLR TECST		;Fala que já leu
+	CLR TECDT
+
+isrtecFIM:
+	AND #HFFFD, INTS	;Desliga bit do teclado
+	JMP tsttimer
+
+;------------------------------------------------------------------------------
+; INTERRUPÇÃO DO TIMER
+;------------------------------------------------------------------------------
+
+	
+isrtim:
+	
+	TST temp		;Verifica se o temporizador da função timer foi acionado
+	BEQ isrtimFIM		;Se for igual a 0 então a função timer ainda não foi chamada, encerra
+	ADD #100, TICKCNT	;Informa que já se passaram 100ms
+	CMP TICKCNT, temp	;Verifica se o timer da interrupção se igualou ao timer da função timer
+	BNE isrtimFIM		;Se não, encerra
+	CLR temp		;Se sim, encerra os dois timers
+	CLR TICKCNT
+	MOV callback, R4	;E vai para a subrotina do endereço callback
+	JSR R7, (R4)
+
+isrtimFIM:
+	AND #HFFFE, INTS 	;Desliga bit do timer
+	JMP isrfim
+	
+;		
+;------------------------------------------------------------------------------
+; WORD	volume()
+;------------------------------------------------------------------------------
+
+volume:
+		
+		and		#h7f,INTE	;Desliga a interrupção do teclado
+		MOV buffer, R1			;Move a tecla lida para r1
+		CLR buffer			;Limpa o buffer
+		or		#h80,INTE	;Habilita a interrupção do teclado
+		CMP R1, #H2B			;Avalia se o usuário digitou "+"
+		BEQ aumenta1
+		
+		CMP R1, #H2D			;Avalia se o usuário digitou "-"
+		BEQ diminui1
+		
+		CMP R1, #H2E			;Avalia se o usuário digitou "."
+		BEQ aumenta10
+		
+		CMP R1, #H2C			;Avalia se o usuário digitou ","
+		BEQ diminui10
+		
+		CMP R1, #H3E			;Avalia se o usuário digitou ">"
+		BEQ aumenta100
+		
+		CMP R1, #H3C			;Avalia se o usuário digitou "<"
+		BEQ diminui100
+		
+		JMP naomudou			;Se não é nenhuma das opções, termina
+		
+aumenta1:	MOV #1, R1			;Caso +
+		JMP aumenta
+		
+diminui1:	MOV #1, R1			;Caso -
+		JMP diminui
+
+aumenta10:	MOV #10, R1			;Caso .
+		JMP aumenta
+		
+diminui10:	MOV #10, R1			;Caso ,
+		JMP diminui	
+		
+aumenta100:	MOV #100, R1			;Caso >
+		JMP aumenta
+
+diminui100:	MOV #100, R1			;Caso <
+		JMP diminui
+		
+diminui:
+		NEG R1				;Torna a alteração negativa
+
+aumenta:	
+		ADD vol, r1			;Soma ao volume
+		CMP R1, #0			;Checa se é negativo
+		BGE maior1000			;Se não, checa se é maior ou igual a 1000
+		MOV #0, R1			;Se sim, zera e termina
+		JMP mudou
+
+maior1000:	CMP R1, #1000			;Vê se é maior ou igual que 1000
+		BLT mudou			;Se não, termina
+		MOV #999, R1			;Se sim, altera para 999
+		
+			
+mudou:		MOV R1, vol			;vol <- R0 com o volume alterado
+		CLR vol100			;Reinicia o volume, zera centenas
+		CLR vol10			;Zera dezenas
+		CLR vol1			;Zera unidades
+
+		JSR R7, displayVOL		;Exibe o volume no visor
+		
+
+naomudou:	
+		MOV vol, R0			;r0 <- volume atual
+		rts		r7
+
+;------------------------------------------------------------------------------
+;void displayVOL(int volume)
+;------------------------------------------------------------------------------		
+displayVOL:
+		MOV vol, r1
+centenas:
+		CMP R1, #100		;Verifica se o volume é menor que 100
+		BLT dezenas
+		SUB #100, R1 		;Se não for, diminui 100 e soma as centenas
+		INC vol100
+		BEQ fimVOL
+		JMP centenas
+
+dezenas:
+		CMP R1, #10		;Verifica se o volume é menor que 10
+		BLT unidades
+		SUB #10, R1		;Se não for, diminui 10 e soma as dezenas
+		INC vol10
+		BEQ fimVOL
+		JMP dezenas
+unidades:
+		TST R1			;Verifica se o volume é 0
+		BEQ fimVOL
+u_loop:		inc vol1		;Se não for, soma as unidades até zerar
+		DEC r1		
+		BEQ fimVOL
+		JMP u_loop
+fimVOL:
+		MOV #VISOR, R3
+		MOV charvol, R2		;Move o código ASCII de 0 para r2
+		ADD vol100, R2		;Adiciona a quantidade de centenas para obter o código do 1º número
+		ADD #33, R3		;Move o visor
+		JSR R7, disp
+
+disp10:	
+		ADD vol10, r2		;Adiciona a quantidade de dezenas para obter o código do 2º número
+		JSR R7, disp
+
+disp1:	
+		ADD vol1, r2		;Adiciona a quantidade de unidades para obter o código do 3º número
+		JSR R7, disp
+		
+		
+		RTS R7	
+
+disp:		MOV R2, (R3)		;Coloca o número no visor
+		MOV #48, charvol	;Reinicia o código ASCII para 0
+		INC R3			;Aumenta uma posição do visor
+		MOV charvol, R2		;Reinicia o código ASCII do R2 para 0
+		RTS R7
+
+;------------------------------------------------------------------------------
+;Variáveis adicionais
+;------------------------------------------------------------------------------
+org 32000
+cursor:		dw 0	;cursor do visor
+vol:		dw 0	;número de 0 a 999
+TICKCNT:	dw 0	;conta interrupções
+TICK:		dw 0	;flag que indica se acabou o temporizador
+buffer:		dw 0	;buffer do teclado
+temp:		dw 0	;temporizador
+callback:	dw 0	;endereço de callback
+vol100:		dw 0	;1° número do volume
+vol10: 		dw 0	;2° número do volume
+vol1: 		dw 0	;3° número do volume
+charvol:	dw #48	;Código ASCII de 0
