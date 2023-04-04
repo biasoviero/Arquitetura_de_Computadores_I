@@ -32,9 +32,9 @@ sw_m	dw	0
 String	db	10 dup (?)
 
 comando				db 256 dup(?)			;Linha de comando lida
-calculado			dw 4 dup(?) 		;Código do arquivo calculado
+calculado			dw 4 dup(?) 			;Código do arquivo calculado
 
-codigo				db 64 dup(?)				;Código de verificação informado
+codigo				db 64 dup(?)			;Código de verificação informado
 
 xString				db 64 dup(?)
 x					dw 4 dup(0)				;Variável para o cálculo do Código VERSAO CERTA
