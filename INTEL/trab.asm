@@ -56,12 +56,17 @@ Main2:
 
 	cmp comandoV, 1			;Comando -v foi chamado?
 	jne Main3
-	call ComparaCod			;Calcula o código do arquivo
+	call ComparaCod			;Compara o código informado com o código calculado
 	
 Main3:
 
 
 	.exit
+	
+;===================================================================
+;Função LinhaComando
+;Lê a linha de comando informada e a armazena na variável comando
+;===================================================================
 
 LinhaComando	proc near
 
@@ -87,7 +92,7 @@ LinhaComando	proc near
 	pop es 								; retorna as informações dos registradores de segmentos
 	pop ds
 	
-	mov bx, ds
+	mov bx, ds							;Destroca DS <-> ES
 	mov es, bx
 	
 	ret
@@ -102,11 +107,11 @@ LinhaComando endp
 
 SplitComando proc near
 	
-	lea si, comando
+	lea si, comando		;Lê a string comando
 
 SplitLoop:
 
-	lodsb
+	lodsb				;Lê caractere
 	
 	cmp al, " "			;Encontrou espaço? Skip
 	je SplitLoop
@@ -117,7 +122,7 @@ SplitLoop:
 	cmp al, "a"			;Verifica qual foi o comando chamado
 	je Arq
 	
-	cmp al, "v"
+	cmp al, "v"			
 	je Cod
 	
 	cmp al, "g"
@@ -130,6 +135,7 @@ SplitComando endp
 
 ;========================================
 ;Comando -a
+;Lê o nome do arquivo, seta a flag a
 ;========================================
 
 Arq:
@@ -154,14 +160,15 @@ LeuArq:
 		
 	jmp SplitLoop
 	
-;========================================
+;======================================================================
 ;Comando -v
-;========================================
+;Lê o código informado e converte suas letras minúculas para maiúsculas
+;======================================================================
 
 Cod:
 	mov comandoV, 1			;Liga a flag
-	lodsb
-	lea di, codigo
+	lodsb					;Lê o caractere
+	lea di, codigo			;Aponta o destino para a variável codigo
 	
 CodLoop:	
 	
@@ -170,7 +177,7 @@ CodLoop:
 	je LeuCod				
 	cmp al, ' '				;Verifica se encontrou um espaço
 	je LeuCod
-	cmp al, 'f'
+	cmp al, 'f'				;Verifica se letras minúsculas foram informadas
 	jbe Minuscula
 	
 Save:
@@ -178,7 +185,7 @@ Save:
 	jmp CodLoop
 	
 Minuscula:
-	cmp al, "F"
+	cmp al, "F"				;Converte minúsculas para maiúsculas
 	jbe Save
 	sub al, 32
 	jmp Save
@@ -189,9 +196,10 @@ LeuCod:
 	dec si
 	jmp SplitLoop
 	
-;========================================
+;========================================================================
 ;Comando -g
-;========================================
+;Seta a flag g
+;========================================================================
 	
 Calcula:
 	mov comandoG, 1			;Liga a flag
@@ -199,179 +207,194 @@ Calcula:
 
 ;========================================================================
 ;LeBytes
-;Lê o arquivo FileName e armazena os bytes em v
+;Lê o arquivo FileName e calcula o seu código de verificação
 ;========================================================================
 
 LeBytes proc near
 				
-				mov [x], 0
-				mov [x + 2], 0
-				mov [x + 4], 0
-				mov [x + 6], 0
-				
-				;Abrir arquivo
+		mov [x], 0					;Inicializa os 64 bits de x com 0
+		mov [x + 2], 0
+		mov [x + 4], 0
+		mov [x + 6], 0
+		
+		;Abrir arquivo
 
-				mov		al,0				;Abre o arquivo para leitura
-				lea		dx,FileName			;Aponta DS para o FileName
-				mov		ah,3dh				;Abre o arquivo
-				int		21h
-				jnc		Continua1
-				lea		bx,MsgErroOpenFile
-				call	printf_s
-;				mov		al,1
-				jmp		Final
+		mov		al,0				;Abre o arquivo para leitura
+		lea		dx,FileName			;Aponta DS para o FileName
+		mov		ah,3dh				;Abre o arquivo
+		int		21h
+		
+		jnc		Continua1			;Erro na abertura do arquivo
+		lea		bx,MsgErroOpenFile
+		call	printf_s
+		jmp		Final
 Continua1:
 
-				mov		FileHandle,ax		;	FileHandle = ax
-				
-				;Ler arquivo
-				
+		mov		FileHandle,ax		;FileHandle = ax
+		
+		;Ler arquivo
+		
 ReadByte:
-				mov 	bx, FileHandle
-				mov		ah,3fh				;Lê do arquivo
-				mov		cx,1				;Lê um byte
-				lea 	dx, FileBuffer
-				int		21h
-				jnc		Continua2		
-				lea		bx,MsgErroReadFile
-				call	printf_s
-				mov		al,1
-				jmp		CloseAndFinal
+		mov 	bx, FileHandle
+		mov		ah,3fh				;Lê do arquivo
+		mov		cx,1				;Lê um byte
+		lea 	dx, FileBuffer
+		int		21h
+		jnc		Continua2			;Erro na leitura do arquivo
+		lea		bx,MsgErroReadFile
+		call	printf_s
+		mov		al,1
+		jmp		CloseAndFinal
 
 Continua2:	
-				cmp		ax,0				;Terminou o arquivo?
-				jne		Continua3
-				mov al, 0
-				jmp Display
+		cmp		ax,0				;Terminou o arquivo?
+		jne		Continua3
+		mov al, 0
+		jmp Display
 
 Continua3:		
-				xor bx, bx					;Limpa bx
-				mov bl, FileBuffer			;Salva o byte lido em bl
-				
-				add [x], bx
-				adc [x + 2], 0 
-				adc [x + 4], 0
-				adc [x + 6], 0
-				
-				jno ReadByte
-				mov [x + 6], 0ffffh
-				mov [x + 2], 0ffffh
-				mov [x + 4], 0ffffh
-				mov [x], 0ffffh
+		xor bx, bx					;Limpa bx
+		mov bl, FileBuffer			;Salva o byte lido em bl
+		
+		add [x], bx					;Add bx ao byte menos significativo de x
+		adc [x + 2], 0 				;Add carry aos outros bytes de x
+		adc [x + 4], 0
+		adc [x + 6], 0
+		
+		jno ReadByte				;Se deu overflow então x assume seu valor máximo
+		mov [x + 6], 0ffffh
+		mov [x + 2], 0ffffh
+		mov [x + 4], 0ffffh
+		mov [x], 0ffffh
 Display:		
-				call SalvaCod
-				cmp comandoG, 1
-				jne CloseAndFinal
-				call PrintCod
-							
+		call SalvaCod				;Salva o código como uma string do número em hexadecimal
+		cmp comandoG, 1				;Se g foi chamado, printa uma mensagem informando o código calculado
+		jne CloseAndFinal			
+		call PrintCod
+					
 CloseAndFinal:	
-				mov bx, FileHandle			;Fecha o arquivo
-				mov ah, 3eh
-				int 21h
+		mov bx, FileHandle			;Fecha o arquivo
+		mov ah, 3eh
+		int 21h
 Final:			
-				mov [si], 0					;Move 0 para o final de v
-				ret
+		mov [si], 0					;Move 0 para o final de v
+		ret
 
 LeBytes endp
 
+;=====================================================================
+;Função PrintCod
+;Exibe uma mensagem informando o código calculado
+;=====================================================================
 
 PrintCod proc near
-			lea  bx,  MsgCalculado
-			call printf_s			
-			lea bx, xString
-			call printf_s
-			ret
+		lea  bx,  MsgCalculado
+		call printf_s			
+		lea bx, xString
+		call printf_s
+		ret
 PrintCod endp
 
+;====================================================================
+;Função SalvaCod
+;Avalia quais bytes de x são diferentes de 0 e os converte para hexa
+;====================================================================
 
 SalvaCod proc near
 
-			lea di, xString
-			
-			cmp [x + 6], 0
-			je Byte3
-			mov ax, [x + 6]
-			call ConverteHex
+		lea di, xString			;Aponta ponteiro para a fonte xString
+		
+		cmp [x + 6], 0			;Byte mais significativo de x é diferente de 0? Converte para string em hexa
+		je Byte3
+		mov ax, [x + 6]
+		call ConverteHex
 Byte3:
-			cmp [x + 4], 0
-			je Byte2
-			mov ax, [x + 4]
-			call ConverteHex
+		cmp [x + 4], 0 			; 2° byte mais significativo de x é diferente de 0? Converte para string em hexa
+		je Byte2
+		mov ax, [x + 4]
+		call ConverteHex
 Byte2:
-			cmp [x + 2], 0
-			je Byte1
-			mov ax, [x + 2]
-			call ConverteHex
-			
+		cmp [x + 2], 0			;3° byte mais significativo de x é diferente de 0? Converte para string em hexa
+		je Byte1
+		mov ax, [x + 2]
+		call ConverteHex
+		
 Byte1:
-			mov ax, [x]
-			call ConverteHex
-				
-			ret
+		mov ax, [x]				;Converte x para hexa
+		call ConverteHex
+			
+		ret
 
 SalvaCod endp
 
-;;recebe numero em ax
-;;recebe destino em bx
+;============================================================================
+;Função ConverteHex
+;Converte um número inteiro para string que corresponde ao seu valor em hexa
+;Recebe número a ser convertido em ax e armazena a string no ponteiro em DI
+;============================================================================
+
 ConverteHex proc near
-			mov cx, 0
-			mov dx, 0
+		mov cx, 0				;CX = 0, DX = 0
+		mov dx, 0
 Printa1:
-			cmp ax, 0
-			je Printa2
-			mov bx, 16
-			div bx
-			push dx
-			inc cx
-			xor dx, dx
-			jmp Printa1
+		cmp ax, 0				;Resto == 0? Termina
+		je Printa2
+		mov bx, 16				;Converte para hexa pelo método das divisões
+		div bx
+		push dx
+		inc cx					;Incrementa contador
+		xor dx, dx
+		jmp Printa1
 Printa2:
-			cmp cx, 0
-			je PrintaFim
-			pop dx
-			cmp dx, 9
-			jle Printa3
-			add dx, 7
+		cmp cx, 0				;Contador chegou ao fim? Termina
+		je PrintaFim
+		pop dx
+		cmp dx, 9				;Verifica se o dígito é um número
+		jle Printa3
+		add dx, 7				;Se for letra, soma 7 
 Printa3:
-			add dx, 48
-			mov al, dl
-			stosb
-;			mov ah, 02h
-;			int 21h
-			dec cx
-			jmp Printa2
+		add dx, 48				;Soma 48 para converter para código ASCII
+		mov al, dl
+		stosb					;Armazena em DI
+		dec cx
+		jmp Printa2
 PrintaFim:
-			cmp ax, [x]
-			jne Retorna
-			mov al, 0
-			stosb
+		cmp ax, [x]				;Se o número a ser convertido for o menos significativo de x, armazena um 0 na string para terminá-la
+		jne Retorna
+		mov al, 0
+		stosb
 Retorna:
-			ret
+		ret
 ConverteHex endp
+
+;======================================================
+;Função ComparaCod
+;Compara o código informado com o código calculado
+;======================================================
 
 ComparaCod proc near
 
-			lea si, xString
-			lea di, codigo
-			mov cx, 8
-			repe cmpsb
-			
-			jne Invalido
-			lea bx, MsgCodigoValido
-			call printf_s
-			lea bx, MsgCRLF
-			call printf_s
-			jmp ComparaFim
+		lea si, xString			;Aponta a fonte para a string com o código calculado
+		lea di, codigo			;Aponta o destino para a string com o código informado
+		mov cx, 8				;Informa que são 8 bits
+		repe cmpsb				;Compara as duas strings
+		
+		jne Invalido			;Caso que é válido
+		lea bx, MsgCodigoValido
+		call printf_s
+		lea bx, MsgCRLF
+		call printf_s
+		jmp ComparaFim
 Invalido:
-			lea bx, MsgCodigoInvalido
-			call printf_s
-			lea bx, MsgCRLF
-			call printf_s
-			call PrintCod
+								;Caso em que é inválido
+		lea bx, MsgCodigoInvalido
+		call printf_s
+		lea bx, MsgCRLF
+		call printf_s
+		call PrintCod
 
 ComparaFim:			
-			ret
-			
+		ret
 
 ComparaCod endp
 
@@ -410,8 +433,10 @@ ps_1:
 	
 printf_s	endp
 
-
-
+;========================================================================
+;Função: Converte um inteiro (n) para (string)
+;		 sprintf(string, "%d", n)
+;========================================================================
 
 sprintf_w	proc	near
 
