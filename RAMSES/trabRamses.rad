@@ -1,82 +1,81 @@
 ;Beatriz Forneck Soviero
-;Cart„o 00342227
 
 
 ORG 0
 
-;INICIALIZA«√O DAS VARI¡VEIS
+;INICIALIZA√á√ÉO DAS VARI√ÅVEIS
 
-;Zera as vari·veis auxiliares
+;Zera as vari√°veis auxiliares
 
 	LDR A #0
-	STR A C8 	;Zera contador atÈ 8
+	STR A C8 	;Zera contador at√© 8
 	STR A CTAM 	;Zera contador do tamanho
 
-;Zera o vetor de saÌda
+;Zera o vetor de sa√≠da
 
-	LDR X IS 	;Carrega o endereÁo do vsaÌda[0]
+	LDR X IS 	;Carrega o endere√ßo do vsa√≠da[0]
 	LDR B #8 	;Carrega o contador b com 8 
 ZEROU:	
-	JZ COPIA 	;Se for 0, vsaÌda foi inicializado
-	STR A 0, X 	;Zera a vsaÌda[b]
-	ADD X #1 	;Passa para o prÛximo byte do vetor
+	JZ COPIA 	;Se for 0, vsa√≠da foi inicializado
+	STR A 0, X 	;Zera a vsa√≠da[b]
+	ADD X #1 	;Passa para o pr√≥ximo byte do vetor
 	SUB B #1 	;b--
 	JMP ZEROU 	;b == 0?
 
-;C”PIA DO VENTRADA
-;Utilizada pois cada elemento do ventrada (exceto o 1∞) sofre deslocamento para a esquerda
+;C√ìPIA DO VENTRADA
+;Utilizada pois cada elemento do ventrada (exceto o 1¬∞) sofre deslocamento para a esquerda
 
 COPIA:
 	LDR X #0
 	LDR A TAM 	;Carrega RA com o tamanho do vetor
 FIMVET:	
-	JZ MUDA 	;Se RA == 0, a operaÁ„o foi realizada TAM vezes e o ventrada foi copiado
+	JZ MUDA 	;Se RA == 0, a opera√ß√£o foi realizada TAM vezes e o ventrada foi copiado
 	ADD X IE	;AUX <- ventrada[ctam]
 	STR X AUX
 	SUB X IE
-	LDR B AUX, I	;ventrada[ctam] <- valor contido no end inÌcio de ventrada + ctam
+	LDR B AUX, I	;ventrada[ctam] <- valor contido no end in√≠cio de ventrada + ctam
 	STR B COPIAV,X
 	ADD X #1	;ctam ++
 	SUB A #1	;tam --
 	JMP FIMVET
 	
-;Vari·veis auxiliares:
+;Vari√°veis auxiliares:
 
-C8:	DB		;Contador atÈ 8
-CTAM:	DB		;Contador atÈ o tamanho do ventrada
-AUX:	DB		;Vari·vel auxiliar para utilizar o modo de endereÁamento indireto
-COPIAV:	DAB 	[8]	;CÛpia do vetor entrada
+C8:	DB		;Contador at√© 8
+CTAM:	DB		;Contador at√© o tamanho do ventrada
+AUX:	DB		;Vari√°vel auxiliar para utilizar o modo de endere√ßamento indireto
+COPIAV:	DAB 	[8]	;C√≥pia do vetor entrada
 
-;MOVIMENTA«√O DOS ELEMENTOS DOS VETORES
+;MOVIMENTA√á√ÉO DOS ELEMENTOS DOS VETORES
 
 MUDA: 			
 
-ac8:	LDR A C8	;Carrega contador atÈ 8(C8) e avalia se c8 - 8 == 0
+ac8:	LDR A C8	;Carrega contador at√© 8(C8) e avalia se c8 - 8 == 0
 	SUB A #8
 	JZ FIM
 actam:	LDR A CTAM	;Carrega contador do tamanho (CTAM) e avalia se ctam - tam == 0
 	SUB A TAM
-	JZ prep 	;Se sim, incrementa c8 e zera ctam. Se n„o, obtÈm os bits do ventrada para coloc·-los no vsaÌda
+	JZ prep 	;Se sim, incrementa c8 e zera ctam. Se n√£o, obt√©m os bits do ventrada para coloc√°-los no vsa√≠da
 
-;ObtenÁ„o dos bits do vetor entrada
+;Obten√ß√£o dos bits do vetor entrada
 
 	LDR X CTAM	;RX recebe o ctam
 	LDR A COPIAV,X	;Carrega ventrada[ctam]
-	AND A #1	;ObtÈm ventrada[ctam][0]
+	AND A #1	;Obt√©m ventrada[ctam][0]
 
-;Deslocamento de cada elemento do ventrada para que sejam posicionados no bit0 de cada byte do vsaÌda
+;Deslocamento de cada elemento do ventrada para que sejam posicionados no bit0 de cada byte do vsa√≠da
 
-	LDR B COPIAV,X 	;Cada item da cÛpia do ventrada È deslocado um bit · direita e o vetor È atualizado
+	LDR B COPIAV,X 	;Cada item da c√≥pia do ventrada √© deslocado um bit √° direita e o vetor √© atualizado
 	SHR B
 	STR B COPIAV,X
 
-;ARMAZENAMENTO NO VSAÕDA DOS BITS OBTIDOS DO VENTRADA
+;ARMAZENAMENTO NO VSA√çDA DOS BITS OBTIDOS DO VENTRADA
 
-;Caso o byte do ventrada analisado n„o for o primeiro, h· um deslocamento para esquerda a fim de armazenar o bit em vsaÌda[c8][ctam]
+;Caso o byte do ventrada analisado n√£o for o primeiro, h√° um deslocamento para esquerda a fim de armazenar o bit em vsa√≠da[c8][ctam]
 
 	LDR X CTAM
 ax:	JZ vsaida	;ctam == 0?
-	STR A AUX	;Se n„o, AUX <- bit obtido de ventrada[ctam]
+	STR A AUX	;Se n√£o, AUX <- bit obtido de ventrada[ctam]
 	ADD A AUX	;2 x AUX = SHL AUX
 	JC carry	;No caso de carry, RA += 1
 	JMP dec
@@ -87,10 +86,10 @@ dec:	SUB X #1	;RX (contador dos bits a serem deslocados) --
 vsaida:	LDR X C8	;RX recebe c8 + vsaida[0]
 	ADD X IS
 	STR X AUX
-	ADD A AUX,I	;OperaÁ„o realizada para ler o valor contido no endereÁo em que se encontra vsaida[c8]
+	ADD A AUX,I	;Opera√ß√£o realizada para ler o valor contido no endere√ßo em que se encontra vsaida[c8]
 	STR A AUX,I	;vsaida[c8] +=  bit de ventrada[ctam]
 	
-;ATUALIZA«√O DOS CONTADORES
+;ATUALIZA√á√ÉO DOS CONTADORES
 
 	LDR X CTAM
 	ADD X #1
@@ -108,9 +107,9 @@ prep:
 FIM:	HLT
 
 
-;Vari·veis
+;Vari√°veis
 
 ORG 192
-IE: 	DB 		;EndereÁo com o inÌcio do vetor de entrada
+IE: 	DB 		;Endere√ßo com o in√≠cio do vetor de entrada
 TAM: 	DB 		;Tamanho do vetor de entrada
-IS: 	DB 		;EndereÁo com o inÌcio do vetor de saÌda
+IS: 	DB 		;Endere√ßo com o in√≠cio do vetor de sa√≠da
