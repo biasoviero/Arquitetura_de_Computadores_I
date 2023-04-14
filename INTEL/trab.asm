@@ -1,5 +1,4 @@
 ; Beatriz Forneck Soviero
-; Cartão 00342227
 
 	.model small
 	.stack
